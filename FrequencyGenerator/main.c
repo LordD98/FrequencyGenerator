@@ -131,7 +131,16 @@
 				TCCR1B = CR1B(presc);
 				OCR1AH = 0xFF-high_val;	//higher value means lower frequency
 				OCR1AL = 0xFF-low_val;	//
-				OCR1B = (uint16_t)(PWM_16bitDuty * (float)OCR1A);	// update PWM value to account for new TOP value
+				uint16_t newDutyVal = (uint16_t)(PWM_16bitDuty * (float)OCR1A);
+				OCR1B = newDutyVal;
+				if(newDutyVal == 0)
+				{
+					TCCR1A &= ~(1<<COM1B1);
+				}
+				else
+				{
+					TCCR1A |= (1<<COM1B1);
+					}
 				valuesChanged = 0;
 			}
 			else if(hold && valuesChanged)
@@ -155,7 +164,16 @@
 			if(valuesChanged && !hold)
 			{
 				PWM_16bitDuty = ((float)(((uint16_t)high_val)<<8|(uint16_t)low_val))/65535.0;
-				OCR1B = (uint16_t)(PWM_16bitDuty * (float)OCR1A);
+				uint16_t newDutyVal = (uint16_t)(PWM_16bitDuty * (float)OCR1A);
+				OCR1B = newDutyVal;
+				if(newDutyVal == 0)
+				{
+					TCCR1A &= ~(1<<COM1B1);
+				}
+				else
+				{
+					TCCR1A |= (1<<COM1B1);
+				}
 				valuesChanged = 0;
 			}
 			else if(hold && valuesChanged)
