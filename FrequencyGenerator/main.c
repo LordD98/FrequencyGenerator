@@ -6,7 +6,7 @@
  */
 
  #define F_CPU 16000000
- //#define DEBUG_MODE		// Don't connect lcd in DEBUG-Mode, just listen to TX-Pin 
+ //#define DEBUG_MODE		// Don't connect lcd in DEBUG-Mode, just listen to TX-Pin
 
  #ifndef DEBUG_MODE
  #define HOLD_DOWN_CYCLES 100
@@ -75,13 +75,14 @@
  enum STATES {STATE_OFF, STATE_FREQ_GEN, STATE_PULSE_GEN, STATE_16BIT_PWM, STATE_DEBUG, STATE_LAST};	// Add more
  uint8_t STATE = STATE_OFF;
 
- enum STATS { SHOW_FREQ, SHOW_PERIOD }; 
+ enum STATS { SHOW_FREQ, SHOW_PERIOD };
  uint8_t showFreqOrPeriod = SHOW_PERIOD;
 
  enum TASKS { TASK_NONE, TASK_DO_PULSE_GEN };
  uint8_t TODO = TASK_NONE;
 
- float PWM_16bitDuty = 0.0; // Duty Cycle of timer 1 (16bit) (from 0 to 1)
+ float PWM_16bitDuty_POT = 0.0; // Duty cycle of timer 1 based on potentiometers (16bit) (from 0 to 1)
+ float PWM_16bitDuty_TIM = 0.0; // Actual duty cycle of timer 1 (16bit) (from 0 to 1)
 
  uint8_t btn0Pressed = 0;
  uint8_t btn1Pressed = 0;
@@ -108,7 +109,7 @@
  volatile uint8_t presc = PRESC_VAL_1024;
  volatile uint8_t valuesChanged = 1;
  volatile uint16_t pulse_cnt = 1;
- 
+
  volatile uint16_t count = 0;
  volatile uint8_t pulse_state = 0;
 
@@ -150,7 +151,7 @@
 			{
 				if(!hold)
 				{
-					pulse_cnt = ((uint16_t)high_val << 8) + low_val + 1;	// can wrap around, 0 implies count = 65536 
+					pulse_cnt = ((uint16_t)high_val << 8) + low_val + 1;	// can wrap around, 0 implies count = 65536
 					#ifdef DEBUG_MODE
 					printf("CNT: %u TODO: %u\n", count, TODO);
 					#endif
@@ -168,7 +169,7 @@
 						lcd_putc('H');
 					}
 					#endif
-					
+
 					TIFR1 = (1<<TOV1)|(1<<OCF1A);
 					#define PULSE_ON()  PORTB |= (1<<PORTB3)
 					#define PULSE_OFF() PORTB &= ~(1<<PORTB3)
@@ -188,7 +189,7 @@
 					}
 					while (count != pulse_cnt);
 					count = 0;
-					TODO = TASK_NONE; 
+					TODO = TASK_NONE;
 				}
 				valuesChanged = 0;
 			}
@@ -207,7 +208,7 @@
 				TCCR1B = CR1B(presc);
 				OCR1AH = 0xFF-high_val;	//higher value means lower frequency
 				OCR1AL = 0xFF-low_val;	//
-				uint16_t newDutyVal = (uint16_t)(PWM_16bitDuty * (float)OCR1A);
+				uint16_t newDutyVal = (uint16_t)(PWM_16bitDuty_POT * (float)OCR1A);
 				OCR1B = newDutyVal;
 				if(newDutyVal == 0)
 				{
@@ -216,7 +217,8 @@
 				else
 				{
 					TCCR1A |= (1<<COM1B1);
-					}
+				}
+				PWM_16bitDuty_TIM = (float)OCR1B/(float)OCR1A;
 				valuesChanged = 0;
 			}
 			else if(hold && valuesChanged)
@@ -241,8 +243,8 @@
 			// Freq = F_CPU/(2*presc_n*(OCR1A))
 			if(valuesChanged && !hold)
 			{
-				PWM_16bitDuty = ((float)(((uint16_t)high_val)<<8|(uint16_t)low_val))/65535.0;
-				uint16_t newDutyVal = (uint16_t)(PWM_16bitDuty * (float)OCR1A);
+				PWM_16bitDuty_POT = ((float)(((uint16_t)high_val)<<8|(uint16_t)low_val))/65535.0;
+				uint16_t newDutyVal = (uint16_t)(PWM_16bitDuty_POT * (float)OCR1A);
 				OCR1B = newDutyVal;
 				if(newDutyVal == 0)
 				{
@@ -252,6 +254,7 @@
 				{
 					TCCR1A |= (1<<COM1B1);
 				}
+				PWM_16bitDuty_TIM = (float)OCR1B/(float)OCR1A;
 				valuesChanged = 0;
 			}
 			else if(hold && valuesChanged)
@@ -318,7 +321,7 @@ void printInfo16bitPWM()
 	lcd_putc('\n');
 	lcd_puts("In %: ");
 	if(OCR1A != 0)
-		sprintf(s_temp, "%f", 100.0 * PWM_16bitDuty);
+		sprintf(s_temp, "%f", 100.0 * PWM_16bitDuty_TIM);
 	else
 		sprintf(s_temp, "%f", 100.0);
 	lcd_puts(appendPercentAndTrim(trimZeroes(s_temp)));	// print duty (%)	100.0 * OCR1B / OCR1A
@@ -334,7 +337,7 @@ void printInfo16bitPWM()
 	printf("Low: %u\n", low_val);
 	#endif
 }
- 
+
 void printInfoFreqGen()
 {
 	sprintf(s_freq, "%f", 16000000.0/(2.0*getPrescF()*((float)OCR1A+1.0)));
@@ -371,7 +374,7 @@ void printInfoPulseGen()
 		sprintf(s_freq, "%f", 16000000.0/(2.0*getPrescF()*((float)OCR1A+1.0)));
 		appendHz(trimZeroes(s_freq));
 		lcd_puts(s_freq);
-	} 
+	}
 	else			// SHOW_PERIOD
 	{
 		lcd_puts(" Per. : ");
@@ -400,7 +403,7 @@ void printInfoPulseGen()
 	#endif
 }
 
- void pollButtons()			// both buttons are active low		// Problem in hold mode and button press skips valueschanged 
+ void pollButtons()			// both buttons are active low		// Problem in hold mode and button press skips valueschanged
  {
 	// TODO: maybe enable mode-change when in hold mode
 	if (bothPressed)		// both buttons were pressed previously
@@ -428,7 +431,7 @@ void printInfoPulseGen()
 			btn1DownCycles = 0;
 			return;
 		}
-		
+
 		if (btn0Pressed)
 		{
 			if(PIND & (1<<PIND2))		// Button 0 released
@@ -442,7 +445,7 @@ void printInfoPulseGen()
 							if (showFreqOrPeriod == SHOW_FREQ)
 							{
 								showFreqOrPeriod = SHOW_PERIOD;
-							} 
+							}
 							else
 							{
 								showFreqOrPeriod = SHOW_FREQ;
@@ -492,7 +495,7 @@ void printInfoPulseGen()
 					{
 						// Do pulse-generation
 						TODO = TASK_DO_PULSE_GEN;
-					} 
+					}
 					else if(!hold)
 					{
 						if(presc < 5)
@@ -628,8 +631,8 @@ void readPotentiometers()
 	if (val <= 0.000001)		// ns
 	{
 		val_temp = val*1000000000;
-		strcpy(temp_unit, "ns"); 
-	} 
+		strcpy(temp_unit, "ns");
+	}
 	else if(val <= 0.001)		// us
 	{
 		val_temp = val*1000000;
@@ -706,7 +709,7 @@ uint8_t lastElem(const char *str)	// returns index of last char (without '\0')
 	DDRB |= (1<<DDB1)|(1<<DDB2);								// Frequency-pin & 16bit-PWM-pin output
 	TCNT1 = 0xFFFF;
  }
- 
+
  void setupPulseGen()
  {
 	//TIMSK1 |= (1<<OCIE1A);
@@ -776,7 +779,7 @@ ISR(TIMER1_COMPA_vect)
 		PULSE_OFF();
 		pulse_state = 0;
 		count++;
-	} 
+	}
 	else
 	{
 		PULSE_ON();
